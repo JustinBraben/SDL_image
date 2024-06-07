@@ -2,6 +2,9 @@ build/
 buildbot/
 /VERSION.txt
 
+zig-cache/
+zig-out/
+
 *.so
 *.so.*
 *.dll
