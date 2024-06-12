@@ -4,8 +4,8 @@
     .version = "2.6.4",
     .dependencies = .{
         .sdl = .{
-            .url = "https://github.com/JustinBraben/SDL/archive/ccd58ed5b9a42f170531983a4a18c8314e08d148.tar.gz",
-            .hash = "122046c87e76ce38c171788c57a8318951f4e96da3b2d2682ac6fc781fd613092b04",
+            .url = "https://github.com/JustinBraben/SDL/archive/3e55857c8977d7189234346cbba884a99b2c81e8.tar.gz",
+            .hash = "1220525bf92152d59aadb5cfd17ef9e7b2dedde0d966f7ba7e71c4c4c8593226bc4c",
         },
     },
     .paths = .{
