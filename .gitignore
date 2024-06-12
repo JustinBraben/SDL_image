@@ -4,6 +4,7 @@ buildbot/
 
 zig-cache/
 zig-out/
+.zig-cache/
 
 *.so
 *.so.*

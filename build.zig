@@ -13,12 +13,12 @@ pub fn build(b: *std.Build) void {
 
     const sdl_dep = b.dependency("sdl", .{
         .target = target,
-        .optimize = .ReleaseSmall,
+        .optimize = optimize,
     });
     lib.linkLibrary(sdl_dep.artifact("SDL3"));
 
-    lib.addIncludePath(.{ .path = "include"});
-    lib.addIncludePath(.{ .path = "src"});
+    lib.addIncludePath(b.path("include"));
+    lib.addIncludePath(b.path("src"));
     lib.addCSourceFiles(.{ .files = &generic_src_files });
     lib.linkLibC();
 
@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) void {
 
         },
     }
-    lib.installHeadersDirectory("include", "");
+    lib.installHeadersDirectory(b.path("include"), "", .{});
     b.installArtifact(lib);
 }
 
