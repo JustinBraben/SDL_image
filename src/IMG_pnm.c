@@ -27,13 +27,12 @@
  * Does not support: maximum component value > 255
  */
 
-#include <SDL3_image/SDL_image.h>
-#include "IMG.h"
+#include "SDL_image.h"
 
 #ifdef LOAD_PNM
 
 /* See if an image is contained in a data source */
-int IMG_isPNM(SDL_IOStream *src)
+int IMG_isPNM(SDL_RWops *src)
 {
     Sint64 start;
     int is_PNM;
@@ -41,9 +40,9 @@ int IMG_isPNM(SDL_IOStream *src)
 
     if ( !src )
         return 0;
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_PNM = 0;
-    if (SDL_ReadIO(src, magic, sizeof(magic)) == sizeof(magic) ) {
+    if ( SDL_RWread(src, magic, sizeof(magic), 1) ) {
         /*
          * PNM magic signatures:
          * P1   PBM, ascii format
@@ -58,12 +57,12 @@ int IMG_isPNM(SDL_IOStream *src)
             is_PNM = 1;
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return(is_PNM);
 }
 
 /* read a non-negative integer from the source. return -1 upon error */
-static int ReadNumber(SDL_IOStream *src)
+static int ReadNumber(SDL_RWops *src)
 {
     int number;
     unsigned char ch;
@@ -73,13 +72,13 @@ static int ReadNumber(SDL_IOStream *src)
 
     /* Skip leading whitespace */
     do {
-        if (SDL_ReadIO(src, &ch, 1) != 1 ) {
+        if ( ! SDL_RWread(src, &ch, 1, 1) ) {
             return(-1);
         }
         /* Eat comments as whitespace */
         if ( ch == '#' ) {  /* Comment is '#' to end of line */
             do {
-                if (SDL_ReadIO(src, &ch, 1) != 1 ) {
+                if ( ! SDL_RWread(src, &ch, 1, 1) ) {
                     return -1;
                 }
             } while ( (ch != '\r') && (ch != '\n') );
@@ -98,7 +97,7 @@ static int ReadNumber(SDL_IOStream *src)
         number *= 10;
         number += ch-'0';
 
-        if (SDL_ReadIO(src, &ch, 1) != 1 ) {
+        if ( !SDL_RWread(src, &ch, 1, 1) ) {
             return -1;
         }
     } while ( SDL_isdigit(ch) );
@@ -106,13 +105,12 @@ static int ReadNumber(SDL_IOStream *src)
     return(number);
 }
 
-SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadPNM_RW(SDL_RWops *src)
 {
     Sint64 start;
     SDL_Surface *surface = NULL;
     int width, height;
-    int maxval, y;
-    size_t bpl;
+    int maxval, y, bpl;
     Uint8 *row;
     Uint8 *buf = NULL;
     char *error = NULL;
@@ -123,14 +121,12 @@ SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
 #define ERROR(s) do { error = (s); goto done; } while(0)
 
     if ( !src ) {
-        /* The error message has been set in SDL_IOFromFile */
+        /* The error message has been set in SDL_RWFromFile */
         return NULL;
     }
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
 
-    if (SDL_ReadIO(src, magic, 2) != 2 ) {
-        return NULL;
-    }
+    SDL_RWread(src, magic, 2, 1);
     kind = magic[1] - '1';
     ascii = 1;
     if(kind >= 3) {
@@ -155,14 +151,14 @@ SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
 
     if(kind == PPM) {
         /* 24-bit surface in R,G,B byte order */
-        surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_RGB24);
+        surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 0, SDL_PIXELFORMAT_RGB24);
     } else {
         /* load PBM/PGM as 8-bit indexed images */
-        surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_INDEX8);
+        surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 0, SDL_PIXELFORMAT_INDEX8);
     }
     if ( surface == NULL )
         ERROR("Out of memory");
-    bpl = width * surface->format->bytes_per_pixel;
+    bpl = width * surface->format->BytesPerPixel;
     if(kind == PGM) {
         SDL_Color *c = surface->format->palette->colors;
         int i;
@@ -185,19 +181,19 @@ SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
     row = (Uint8 *)surface->pixels;
     for(y = 0; y < height; y++) {
         if(ascii) {
+            int i;
             if(kind == PBM) {
-                int i;
                 for(i = 0; i < width; i++) {
                     Uint8 ch;
                     do {
-                        if(SDL_ReadIO(src, &ch, 1) != 1)
+                        if(!SDL_RWread(src, &ch,
+                                   1, 1))
                                ERROR("file truncated");
                         ch -= '0';
                     } while(ch > 1);
                     row[i] = ch;
                 }
             } else {
-                size_t i;
                 for(i = 0; i < bpl; i++) {
                     int c;
                     c = ReadNumber(src);
@@ -208,7 +204,7 @@ SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
             }
         } else {
             Uint8 *dst = (kind == PBM) ? buf : row;
-            if(SDL_ReadIO(src, dst, bpl) != bpl)
+            if(!SDL_RWread(src, dst, bpl, 1))
                 ERROR("file truncated");
             if(kind == PBM) {
                 /* expand bitmap to 8bpp */
@@ -221,7 +217,7 @@ SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
         }
         if(maxval < 255) {
             /* scale up to full dynamic range (slow) */
-            size_t i;
+            int i;
             for(i = 0; i < bpl; i++)
                 row[i] = row[i] * 255 / maxval;
         }
@@ -230,9 +226,9 @@ SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
 done:
     SDL_free(buf);
     if(error) {
-        SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+        SDL_RWseek(src, start, RW_SEEK_SET);
         if ( surface ) {
-            SDL_DestroySurface(surface);
+            SDL_FreeSurface(surface);
             surface = NULL;
         }
         IMG_SetError("%s", error);
@@ -241,18 +237,18 @@ done:
 }
 
 #else
-#if defined(_MSC_VER) && _MSC_VER >= 1300
+#if _MSC_VER >= 1300
 #pragma warning(disable : 4100) /* warning C4100: 'op' : unreferenced formal parameter */
 #endif
 
 /* See if an image is contained in a data source */
-int IMG_isPNM(SDL_IOStream *src)
+int IMG_isPNM(SDL_RWops *src)
 {
     return(0);
 }
 
 /* Load a PNM type image from an SDL datasource */
-SDL_Surface *IMG_LoadPNM_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadPNM_RW(SDL_RWops *src)
 {
     return(NULL);
 }

@@ -1301,9 +1301,9 @@ static unsigned int nsvg__parseColorRGB(const char* str)
 			else break;
 		}
 		if (i == 3) {
-			rgbi[0] = (unsigned int)roundf(rgbf[0] * 2.55f);
-			rgbi[1] = (unsigned int)roundf(rgbf[1] * 2.55f);
-			rgbi[2] = (unsigned int)roundf(rgbf[2] * 2.55f);
+			rgbi[0] = roundf(rgbf[0] * 2.55f);
+			rgbi[1] = roundf(rgbf[1] * 2.55f);
+			rgbi[2] = roundf(rgbf[2] * 2.55f);
 		} else {
 			rgbi[0] = rgbi[1] = rgbi[2] = 128;
 		}
@@ -1686,7 +1686,7 @@ static int nsvg__parseRotate(float* xform, const char* str)
 
 static void nsvg__parseTransform(float* xform, const char* str)
 {
-	float t[6] = { 0 };
+	float t[6];
 	int len;
 	nsvg__xformIdentity(xform);
 	while (*str)

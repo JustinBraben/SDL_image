@@ -15,10 +15,9 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-    lib.linkLibrary(sdl_dep.artifact("SDL3"));
+    lib.linkLibrary(sdl_dep.artifact("SDL2"));
 
     lib.addIncludePath(b.path("include"));
-    lib.addIncludePath(b.path("src"));
     lib.addCSourceFiles(.{ .files = &generic_src_files });
     lib.linkLibC();
 

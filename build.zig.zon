@@ -1,11 +1,11 @@
 .{
     .name = "SDL_Image",
-    .minimum_zig_version = "0.12.0",
-    .version = "2.6.4",
+    .minimum_zig_version = "0.13.0",
+    .version = "2.8.2",
     .dependencies = .{
         .sdl = .{
-            .url = "https://github.com/JustinBraben/SDL/archive/3e55857c8977d7189234346cbba884a99b2c81e8.tar.gz",
-            .hash = "1220525bf92152d59aadb5cfd17ef9e7b2dedde0d966f7ba7e71c4c4c8593226bc4c",
+            .url = "https://github.com/JustinBraben/SDL/archive/5cd2d5ec90ee6a0b8a82de01ac9e056f01d76448.tar.gz",
+            .hash = "1220a01ca8df4247edc901d95fef93c29f43047ec36f40315067c6318657380bfa51",
         },
     },
     .paths = .{

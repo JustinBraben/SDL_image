@@ -23,8 +23,7 @@
  * https://github.com/phoboslab/qoi
  */
 
-#include <SDL3_image/SDL_image.h>
-#include "IMG.h"
+#include "SDL_image.h"
 #include <limits.h> /* for INT_MAX */
 
 #ifdef LOAD_QOI
@@ -43,7 +42,7 @@
 #include "qoi.h"
 
 /* See if an image is contained in a data source */
-int IMG_isQOI(SDL_IOStream *src)
+int IMG_isQOI(SDL_RWops *src)
 {
     Sint64 start;
     int is_QOI;
@@ -51,19 +50,19 @@ int IMG_isQOI(SDL_IOStream *src)
 
     if ( !src )
         return 0;
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_QOI = 0;
-    if (SDL_ReadIO(src, magic, sizeof(magic)) == sizeof(magic) ) {
+    if ( SDL_RWread(src, magic, sizeof(magic), 1) ) {
         if ( SDL_strncmp(magic, "qoif", 4) == 0 ) {
             is_QOI = 1;
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return(is_QOI);
 }
 
 /* Load a QOI type image from an SDL datasource */
-SDL_Surface *IMG_LoadQOI_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadQOI_RW(SDL_RWops *src)
 {
     void *data;
     size_t size;
@@ -71,7 +70,7 @@ SDL_Surface *IMG_LoadQOI_IO(SDL_IOStream *src)
     qoi_desc image_info;
     SDL_Surface *surface = NULL;
 
-    data = (void *)SDL_LoadFile_IO(src, &size, SDL_FALSE);
+    data = (void *)SDL_LoadFile_RW(src, &size, SDL_FALSE);
     if ( !data ) {
         return NULL;
     }
@@ -89,11 +88,12 @@ SDL_Surface *IMG_LoadQOI_IO(SDL_IOStream *src)
         return NULL;
     }
 
-    surface = SDL_CreateSurfaceFrom(pixel_data,
-                                    image_info.width,
-                                    image_info.height,
-                                    (image_info.width * 4),
-                                    SDL_PIXELFORMAT_RGBA32);
+    surface = SDL_CreateRGBSurfaceWithFormatFrom(pixel_data,
+                                                 image_info.width,
+                                                 image_info.height,
+                                                 32,
+                                                 (image_info.width * 4),
+                                                 SDL_PIXELFORMAT_RGBA32);
     if ( !surface ) {
         QOI_FREE(pixel_data);
         IMG_SetError("Couldn't create SDL_Surface");
@@ -107,18 +107,18 @@ SDL_Surface *IMG_LoadQOI_IO(SDL_IOStream *src)
 }
 
 #else
-#if defined(_MSC_VER) && _MSC_VER >= 1300
+#if _MSC_VER >= 1300
 #pragma warning(disable : 4100) /* warning C4100: 'op' : unreferenced formal parameter */
 #endif
 
 /* See if an image is contained in a data source */
-int IMG_isQOI(SDL_IOStream *src)
+int IMG_isQOI(SDL_RWops *src)
 {
     return(0);
 }
 
 /* Load a QOI type image from an SDL datasource */
-SDL_Surface *IMG_LoadQOI_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadQOI_RW(SDL_RWops *src)
 {
     return(NULL);
 }

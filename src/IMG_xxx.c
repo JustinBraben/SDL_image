@@ -21,14 +21,12 @@
 
 /* This is a generic "format not supported" image framework */
 
-#include <SDL3_image/SDL_image.h>
-#include "IMG.h"
+#include "SDL_image.h"
 
 #ifdef LOAD_XXX
 
 /* See if an image is contained in a data source */
-/* Remember to declare this procedure in IMG.h . */
-int IMG_isXXX(SDL_IOStream *src)
+int IMG_isXXX(SDL_RWops *src)
 {
     int start;
     int is_XXX;
@@ -37,36 +35,35 @@ int IMG_isXXX(SDL_IOStream *src)
         return 0;
     }
 
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_XXX = 0;
 
     /* Detect the image here */
 
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return is_XXX;
 }
 
 /* Load an XXX type image from an SDL datasource */
-/* Remember to declare this procedure in IMG.h . */
-SDL_Surface *IMG_LoadXXX_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadXXX_RW(SDL_RWops *src)
 {
     int start;
     const char *error = NULL;
     SDL_Surface *surface = NULL;
 
     if (!src) {
-        /* The error message has been set in SDL_IOFromFile */
+        /* The error message has been set in SDL_RWFromFile */
         return NULL;
     }
 
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
 
     /* Load the image here */
 
     if (error) {
-        SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+        SDL_RWseek(src, start, RW_SEEK_SET);
         if (surface) {
-            SDL_DestroySurface(surface);
+            SDL_FreeSurface(surface);
             surface = NULL;
         }
         IMG_SetError("%s", error);
@@ -77,17 +74,17 @@ SDL_Surface *IMG_LoadXXX_IO(SDL_IOStream *src)
 
 #else
 
-#if defined(_MSC_VER) && _MSC_VER >= 1300
+#if _MSC_VER >= 1300
 #pragma warning(disable : 4100) /* warning C4100: 'op' : unreferenced formal parameter */
 #endif
 
-int IMG_isXXX(SDL_IOStream *src)
+int IMG_isXXX(SDL_RWops *src)
 {
     (void) src;
     return 0;
 }
 
-SDL_Surface *IMG_LoadXXX_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadXXX_RW(SDL_RWops *src)
 {
     (void) src;
     return NULL;

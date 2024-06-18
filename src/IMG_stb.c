@@ -19,8 +19,7 @@
   3. This notice may not be removed or altered from any source distribution.
 */
 
-#include <SDL3_image/SDL_image.h>
-#include "IMG.h"
+#include "SDL_image.h"
 
 #ifdef USE_STBIMAGE
 
@@ -37,7 +36,6 @@
 #define strncmp SDL_strncmp
 #define strtol SDL_strtol
 
-#define abs SDL_abs
 #define pow SDL_pow
 #define ldexp SDL_scalbn
 
@@ -57,24 +55,30 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-static int IMG_LoadSTB_IO_read(void *user, char *data, int size)
+static int IMG_LoadSTB_RW_read(void *user, char *data, int size)
 {
-    size_t amount = SDL_ReadIO((SDL_IOStream*)user, data, size);
-    return (int)amount;
+    return (int) SDL_RWread((SDL_RWops*)user, data, 1, size);
 }
 
-static void IMG_LoadSTB_IO_skip(void *user, int n)
+static void IMG_LoadSTB_RW_skip(void *user, int n)
 {
-    SDL_SeekIO((SDL_IOStream*)user, n, SDL_IO_SEEK_CUR);
+    SDL_RWseek((SDL_RWops*)user, n, RW_SEEK_CUR);
 }
 
-static int IMG_LoadSTB_IO_eof(void *user)
+static int IMG_LoadSTB_RW_eof(void *user)
 {
-    SDL_IOStream *src = (SDL_IOStream*)user;
-    return (SDL_GetIOStatus(src) == SDL_IO_STATUS_EOF);
+    /* FIXME: Do we not have a way to detect EOF? -flibit */
+    size_t bytes, filler;
+    SDL_RWops *src = (SDL_RWops*)user;
+    bytes = SDL_RWread(src, &filler, 1, 1);
+    if (bytes != 1) { /* FIXME: Could also be an error... */
+        return 1;
+    }
+    SDL_RWseek(src, -1, RW_SEEK_CUR);
+    return 0;
 }
 
-SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadSTB_RW(SDL_RWops *src)
 {
     Sint64 start;
     Uint8 magic[26];
@@ -86,12 +90,12 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
     unsigned int palette_colors[256];
 
     if (!src) {
-        /* The error message has been set in SDL_IOFromFile */
+        /* The error message has been set in SDL_RWFromFile */
         return NULL;
     }
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
 
-    if (SDL_ReadIO(src, magic, sizeof(magic)) == sizeof(magic)) {
+    if (SDL_RWread(src, magic, 1, sizeof(magic)) == sizeof(magic)) {
         const Uint8 PNG_COLOR_INDEXED = 3;
         if (magic[0] == 0x89 &&
             magic[1] == 'P' &&
@@ -105,12 +109,12 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
             use_palette = SDL_TRUE;
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
 
     /* Load the image data */
-    rw_callbacks.read = IMG_LoadSTB_IO_read;
-    rw_callbacks.skip = IMG_LoadSTB_IO_skip;
-    rw_callbacks.eof = IMG_LoadSTB_IO_eof;
+    rw_callbacks.read = IMG_LoadSTB_RW_read;
+    rw_callbacks.skip = IMG_LoadSTB_RW_skip;
+    rw_callbacks.eof = IMG_LoadSTB_RW_eof;
     w = h = format = 0; /* silence warning */
     if (use_palette) {
         /* Unused palette entries will be opaque white */
@@ -135,15 +139,16 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
         );
     }
     if (!pixels) {
-        SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+        SDL_RWseek(src, start, RW_SEEK_SET);
         return NULL;
     }
 
     if (use_palette) {
-        surface = SDL_CreateSurfaceFrom(
+        surface = SDL_CreateRGBSurfaceWithFormatFrom(
             pixels,
             w,
             h,
+            8,
             w,
             SDL_PIXELFORMAT_INDEX8
         );
@@ -173,9 +178,12 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
                 }
             }
             if (has_alpha) {
-                SDL_SetSurfaceBlendMode(surface, SDL_BLENDMODE_BLEND);
+                /* SDL doesn't support blitting with the palette alpha, so expand the palette */
+                SDL_Surface *converted = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+                SDL_FreeSurface(surface);
+                surface = converted;
             } else if (has_colorkey) {
-                SDL_SetSurfaceColorKey(surface, SDL_TRUE, colorkey_index);
+                SDL_SetColorKey(surface, SDL_TRUE, colorkey_index);
             }
 
             /* FIXME: This sucks. It'd be better to allocate the surface first, then
@@ -183,14 +191,17 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
              * https://github.com/nothings/stb/issues/58
              * -flibit
              */
-            surface->flags &= ~SDL_PREALLOC;
+            if (surface) {
+                surface->flags &= ~SDL_PREALLOC;
+            }
         }
 
     } else if (format == STBI_grey || format == STBI_rgb || format == STBI_rgb_alpha) {
-        surface = SDL_CreateSurfaceFrom(
+        surface = SDL_CreateRGBSurfaceWithFormatFrom(
             pixels,
             w,
             h,
+            8 * format,
             w * format,
             (format == STBI_rgb_alpha) ? SDL_PIXELFORMAT_RGBA32 :
             (format == STBI_rgb) ? SDL_PIXELFORMAT_RGB24 :
@@ -218,17 +229,23 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
         }
 
     } else if (format == STBI_grey_alpha) {
-        surface = SDL_CreateSurface(w, h, SDL_PIXELFORMAT_RGBA32);
+        surface = SDL_CreateRGBSurfaceWithFormat(
+            0,
+            w,
+            h,
+            32,
+            SDL_PIXELFORMAT_RGBA32
+        );
         if (surface) {
-            Uint8 *src_ptr = pixels;
+            Uint8 *src = pixels;
             Uint8 *dst = (Uint8 *)surface->pixels;
             int skip = surface->pitch - (surface->w * 4);
             int row, col;
 
             for (row = 0; row < h; ++row) {
                 for (col = 0; col < w; ++col) {
-                    Uint8 c = *src_ptr++;
-                    Uint8 a = *src_ptr++;
+                    Uint8 c = *src++;
+                    Uint8 a = *src++;
                     *dst++ = c;
                     *dst++ = c;
                     *dst++ = c;
@@ -245,7 +262,7 @@ SDL_Surface *IMG_LoadSTB_IO(SDL_IOStream *src)
     if (!surface) {
         /* The error message should already be set */
         stbi_image_free(pixels); /* calls SDL_free() */
-        SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+        SDL_RWseek(src, start, RW_SEEK_SET);
     }
     return surface;
 }

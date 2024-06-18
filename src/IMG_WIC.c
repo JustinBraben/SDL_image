@@ -21,15 +21,14 @@
 
 #if defined(SDL_IMAGE_USE_WIC_BACKEND)
 
-#include <SDL3_image/SDL_image.h>
-#include "IMG.h"
+#include "SDL_image.h"
 #define COBJMACROS
 #include <initguid.h>
 #include <wincodec.h>
 
 static IWICImagingFactory* wicFactory = NULL;
 
-static int WIC_Init(void)
+static int WIC_Init()
 {
     if (wicFactory == NULL) {
         HRESULT hr = CoCreateInstance(
@@ -47,44 +46,44 @@ static int WIC_Init(void)
     return 0;
 }
 
-static void WIC_Quit(void)
+static void WIC_Quit()
 {
     if (wicFactory) {
         IWICImagingFactory_Release(wicFactory);
     }
 }
 
-int IMG_InitPNG(void)
+int IMG_InitPNG()
 {
     return WIC_Init();
 }
 
-void IMG_QuitPNG(void)
+void IMG_QuitPNG()
 {
     WIC_Quit();
 }
 
-int IMG_InitJPG(void)
+int IMG_InitJPG()
 {
     return WIC_Init();
 }
 
-void IMG_QuitJPG(void)
+void IMG_QuitJPG()
 {
     WIC_Quit();
 }
 
-int IMG_InitTIF(void)
+int IMG_InitTIF()
 {
     return WIC_Init();
 }
 
-void IMG_QuitTIF(void)
+void IMG_QuitTIF()
 {
     WIC_Quit();
 }
 
-int IMG_isPNG(SDL_IOStream *src)
+int IMG_isPNG(SDL_RWops *src)
 {
     Sint64 start;
     int is_PNG;
@@ -94,9 +93,9 @@ int IMG_isPNG(SDL_IOStream *src)
         return 0;
     }
 
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_PNG = 0;
-    if (SDL_ReadIO(src, magic, sizeof(magic)) == sizeof(magic) ) {
+    if ( SDL_RWread(src, magic, 1, sizeof(magic)) == sizeof(magic) ) {
         if ( magic[0] == 0x89 &&
              magic[1] == 'P' &&
              magic[2] == 'N' &&
@@ -104,11 +103,11 @@ int IMG_isPNG(SDL_IOStream *src)
             is_PNG = 1;
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return(is_PNG);
 }
 
-int IMG_isJPG(SDL_IOStream *src)
+int IMG_isJPG(SDL_RWops *src)
 {
     Sint64 start;
     int is_JPG;
@@ -121,14 +120,14 @@ int IMG_isJPG(SDL_IOStream *src)
 
     if (!src)
         return 0;
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_JPG = 0;
     in_scan = 0;
-    if (SDL_ReadIO(src, magic, 2) == 2) {
+    if (SDL_RWread(src, magic, 2, 1)) {
         if ((magic[0] == 0xFF) && (magic[1] == 0xD8)) {
             is_JPG = 1;
             while (is_JPG == 1) {
-                if (SDL_ReadIO(src, magic, 2) != 2) {
+                if (SDL_RWread(src, magic, 1, 2) != 2) {
                     is_JPG = 0;
                 }
                 else if ((magic[0] != 0xFF) && (in_scan == 0)) {
@@ -137,7 +136,7 @@ int IMG_isJPG(SDL_IOStream *src)
                 else if ((magic[0] != 0xFF) || (magic[1] == 0xFF)) {
                     /* Extra padding in JPEG (legal) */
                     /* or this is data and we are scanning */
-                    SDL_SeekIO(src, -1, SDL_IO_SEEK_CUR);
+                    SDL_RWseek(src, -1, RW_SEEK_CUR);
                 }
                 else if (magic[1] == 0xD9) {
                     /* Got to end of good JPEG */
@@ -149,7 +148,7 @@ int IMG_isJPG(SDL_IOStream *src)
                 else if ((magic[1] >= 0xD0) && (magic[1] < 0xD9)) {
                     /* These have nothing else */
                 }
-                else if (SDL_ReadIO(src, magic + 2, 2) != 2) {
+                else if (SDL_RWread(src, magic + 2, 1, 2) != 2) {
                     is_JPG = 0;
                 }
                 else {
@@ -157,9 +156,9 @@ int IMG_isJPG(SDL_IOStream *src)
                     Sint64 innerStart;
                     Uint32 size;
                     Sint64 end;
-                    innerStart = SDL_TellIO(src);
+                    innerStart = SDL_RWtell(src);
                     size = (magic[2] << 8) + magic[3];
-                    end = SDL_SeekIO(src, size - 2, SDL_IO_SEEK_CUR);
+                    end = SDL_RWseek(src, size - 2, RW_SEEK_CUR);
                     if (end != innerStart + size - 2) is_JPG = 0;
                     if (magic[1] == 0xDA) {
                         /* Now comes the actual JPEG meat */
@@ -175,11 +174,11 @@ int IMG_isJPG(SDL_IOStream *src)
             }
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return(is_JPG);
 }
 
-int IMG_isTIF(SDL_IOStream * src)
+int IMG_isTIF(SDL_RWops* src)
 {
     Sint64 start;
     int is_TIF;
@@ -187,9 +186,9 @@ int IMG_isTIF(SDL_IOStream * src)
 
     if (!src)
         return 0;
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_TIF = 0;
-    if (SDL_ReadIO(src, magic, sizeof(magic)) == sizeof(magic)) {
+    if (SDL_RWread(src, magic, 1, sizeof(magic)) == sizeof(magic)) {
         if ((magic[0] == 'I' &&
             magic[1] == 'I' &&
             magic[2] == 0x2a &&
@@ -201,11 +200,11 @@ int IMG_isTIF(SDL_IOStream * src)
             is_TIF = 1;
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return(is_TIF);
 }
 
-static SDL_Surface* WIC_LoadImage(SDL_IOStream *src)
+static SDL_Surface* WIC_LoadImage(SDL_RWops *src)
 {
     SDL_Surface* surface = NULL;
 
@@ -219,12 +218,15 @@ static SDL_Surface* WIC_LoadImage(SDL_IOStream *src)
         IMG_SetError("WIC failed to initialize!");
         return NULL;
     }
-
-    size_t fileSize;
-    Uint8 *memoryBuffer = (Uint8 *)SDL_LoadFile_IO(src, &fileSize, SDL_FALSE);
+    
+    Sint64 fileSize = SDL_RWsize(src);
+    Uint8* memoryBuffer = (Uint8*)SDL_malloc(fileSize);
     if (!memoryBuffer) {
+        SDL_OutOfMemory();
         return NULL;  
     }
+
+    SDL_RWread(src, memoryBuffer, 1, fileSize);
 
 #define DONE_IF_FAILED(X) if (FAILED((X))) { goto done; }
     DONE_IF_FAILED(IWICImagingFactory_CreateStream(wicFactory, &stream));
@@ -250,7 +252,7 @@ static SDL_Surface* WIC_LoadImage(SDL_IOStream *src)
     DONE_IF_FAILED(IWICBitmapFrameDecode_GetSize(bitmapFrame, &width, &height));
 #undef DONE_IF_FAILED
 
-    surface = SDL_CreateSurface(width, height, SDL_PIXELFORMAT_ABGR8888);
+    surface = SDL_CreateRGBSurfaceWithFormat(0, width, height, 0, SDL_PIXELFORMAT_ABGR8888);
     IWICFormatConverter_CopyPixels(
         formatConverter,
         NULL,
@@ -278,17 +280,17 @@ done:
  return surface;
 }
 
-SDL_Surface *IMG_LoadPNG_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadPNG_RW(SDL_RWops *src)
 {
     return WIC_LoadImage(src);
 }
 
-SDL_Surface *IMG_LoadJPG_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadJPG_RW(SDL_RWops *src)
 {
     return WIC_LoadImage(src);
 }
 
-SDL_Surface *IMG_LoadTIF_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadTIF_RW(SDL_RWops *src)
 {
     return WIC_LoadImage(src);
 }

@@ -30,13 +30,12 @@
  * http://entropymine.com/jason/bmpsuite/bmpsuite/html/bmpsuite.html
  */
 
-#include <SDL3_image/SDL_image.h>
-#include "IMG.h"
+#include "SDL_image.h"
 
 #ifdef LOAD_BMP
 
 /* See if an image is contained in a data source */
-int IMG_isBMP(SDL_IOStream *src)
+int IMG_isBMP(SDL_RWops *src)
 {
     Sint64 start;
     int is_BMP;
@@ -44,18 +43,18 @@ int IMG_isBMP(SDL_IOStream *src)
 
     if ( !src )
         return 0;
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_BMP = 0;
-    if (SDL_ReadIO(src, magic, sizeof(magic)) == sizeof(magic)) {
-        if (SDL_strncmp(magic, "BM", 2) == 0) {
+    if ( SDL_RWread(src, magic, sizeof(magic), 1) ) {
+        if ( SDL_strncmp(magic, "BM", 2) == 0 ) {
             is_BMP = 1;
         }
     }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
     return(is_BMP);
 }
 
-static int IMG_isICOCUR(SDL_IOStream *src, int type)
+static int IMG_isICOCUR(SDL_RWops *src, int type)
 {
     Sint64 start;
     int is_ICOCUR;
@@ -65,35 +64,33 @@ static int IMG_isICOCUR(SDL_IOStream *src, int type)
     Uint16 bfType;
     Uint16 bfCount;
 
-    if (!src) {
+    if ( !src )
         return 0;
-    }
-    start = SDL_TellIO(src);
+    start = SDL_RWtell(src);
     is_ICOCUR = 0;
-    if (SDL_ReadU16LE(src, &bfReserved) &&
-        SDL_ReadU16LE(src, &bfType) &&
-        SDL_ReadU16LE(src, &bfCount) &&
-        (bfReserved == 0) && (bfType == type) && (bfCount != 0)) {
+    bfReserved = SDL_ReadLE16(src);
+    bfType = SDL_ReadLE16(src);
+    bfCount = SDL_ReadLE16(src);
+    if ((bfReserved == 0) && (bfType == type) && (bfCount != 0))
         is_ICOCUR = 1;
-    }
-    SDL_SeekIO(src, start, SDL_IO_SEEK_SET);
+    SDL_RWseek(src, start, RW_SEEK_SET);
 
     return (is_ICOCUR);
 }
 
-int IMG_isICO(SDL_IOStream *src)
+int IMG_isICO(SDL_RWops *src)
 {
     return IMG_isICOCUR(src, 1);
 }
 
-int IMG_isCUR(SDL_IOStream *src)
+int IMG_isCUR(SDL_RWops *src)
 {
     return IMG_isICOCUR(src, 2);
 }
 
-#include <SDL3/SDL_error.h>
-#include <SDL3/SDL_video.h>
-#include <SDL3/SDL_endian.h>
+#include "SDL_error.h"
+#include "SDL_video.h"
+#include "SDL_endian.h"
 
 /* Compression encodings for BMP files */
 #ifndef BI_RGB
@@ -103,19 +100,28 @@ int IMG_isCUR(SDL_IOStream *src)
 #define BI_BITFIELDS    3
 #endif
 
-static SDL_Surface *LoadBMP_IO (SDL_IOStream *src, SDL_bool closeio)
+static SDL_Surface *LoadBMP_RW (SDL_RWops *src, int freesrc)
 {
-    return SDL_LoadBMP_IO(src, closeio);
+    return SDL_LoadBMP_RW(src, freesrc);
+}
+
+static Uint8
+SDL_Read8(SDL_RWops * src)
+{
+    Uint8 value;
+
+    SDL_RWread(src, &value, 1, 1);
+    return (value);
 }
 
 static SDL_Surface *
-LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
+LoadICOCUR_RW(SDL_RWops * src, int type, int freesrc)
 {
-    SDL_bool was_error = SDL_TRUE;
+    SDL_bool was_error;
     Sint64 fp_offset = 0;
     int bmpPitch;
     int i,j, pad;
-    SDL_Surface *surface = NULL;
+    SDL_Surface *surface;
     /*
     Uint32 Rmask;
     Uint32 Gmask;
@@ -123,8 +129,8 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
     */
     Uint8 *bits;
     int ExpandBMP;
-    Uint8 maxCol = 0;
-    Uint32 icoOfs = 0;
+    int maxCol = 0;
+    int icoOfs = 0;
     Uint32 palette[256];
 
     /* The Win32 ICO file header (14 bytes) */
@@ -148,27 +154,32 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
     Uint32 biClrUsed;
 
     /* Make sure we are passed a valid data source */
+    surface = NULL;
+    was_error = SDL_FALSE;
     if (src == NULL) {
+        was_error = SDL_TRUE;
         goto done;
     }
 
     /* Read in the ICO file header */
-    fp_offset = SDL_TellIO(src);
+    fp_offset = SDL_RWtell(src);
+    SDL_ClearError();
 
-    if (!SDL_ReadU16LE(src, &bfReserved) ||
-        !SDL_ReadU16LE(src, &bfType) ||
-        !SDL_ReadU16LE(src, &bfCount) ||
-        (bfReserved != 0) || (bfType != type) || (bfCount == 0)) {
+    bfReserved = SDL_ReadLE16(src);
+    bfType = SDL_ReadLE16(src);
+    bfCount = SDL_ReadLE16(src);
+    if ((bfReserved != 0) || (bfType != type) || (bfCount == 0)) {
         IMG_SetError("File is not a Windows %s file", type == 1 ? "ICO" : "CUR");
+        was_error = SDL_TRUE;
         goto done;
     }
 
     /* Read the Win32 Icon Directory */
     for (i = 0; i < bfCount; i++) {
         /* Icon Directory Entries */
-        Uint8 bWidth;       /* Uint8, but 0 = 256 ! */
-        Uint8 bHeight;      /* Uint8, but 0 = 256 ! */
-        Uint8 bColorCount;  /* Uint8, but 0 = 256 ! */
+        int bWidth = SDL_Read8(src);    /* Uint8, but 0 = 256 ! */
+        int bHeight = SDL_Read8(src);   /* Uint8, but 0 = 256 ! */
+        int bColorCount = SDL_Read8(src);       /* Uint8, but 0 = 256 ! */
         /*
         Uint8 bReserved;
         Uint16 wPlanes;
@@ -176,69 +187,57 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
         Uint32 dwBytesInRes;
         */
         Uint32 dwImageOffset;
-        int nWidth, nHeight, nColorCount;
 
-        if (!SDL_ReadU8(src, &bWidth) ||
-            !SDL_ReadU8(src, &bHeight) ||
-            !SDL_ReadU8(src, &bColorCount) ||
-            !SDL_ReadU8(src, NULL /* bReserved */) ||
-            !SDL_ReadU16LE(src, NULL /* wPlanes */) ||
-            !SDL_ReadU16LE(src, NULL /* wBitCount */) ||
-            !SDL_ReadU32LE(src, NULL /* dwBytesInRes */) ||
-            !SDL_ReadU32LE(src, &dwImageOffset)) {
-            goto done;
-        }
+        /* bReserved = */ SDL_Read8(src);
+        /* wPlanes = */ SDL_ReadLE16(src);
+        /* wBitCount = */ SDL_ReadLE16(src);
+        /* dwBytesInRes = */ SDL_ReadLE32(src);
+        dwImageOffset = SDL_ReadLE32(src);
 
-        if (bWidth) {
-            nWidth = bWidth;
-        } else {
-            nWidth = 256;
-        }
-        if (bHeight) {
-            nHeight = bHeight;
-        } else {
-            nHeight = 256;
-        }
-        if (bColorCount) {
-            nColorCount = bColorCount;
-        } else {
-            nColorCount = 256;
-        }
+        if (!bWidth)
+            bWidth = 256;
+        if (!bHeight)
+            bHeight = 256;
+        if (!bColorCount)
+            bColorCount = 256;
 
-        //SDL_Log("%dx%d@%d - %08x\n", nWidth, nHeight, nColorCount, dwImageOffset);
-        (void)nWidth;
-        (void)nHeight;
-        if (nColorCount > maxCol) {
-            maxCol = nColorCount;
+        //printf("%dx%d@%d - %08x\n", bWidth, bHeight, bColorCount, dwImageOffset);
+        if (bColorCount > maxCol) {
+            maxCol = bColorCount;
             icoOfs = dwImageOffset;
-            //SDL_Log("marked\n");
+            //printf("marked\n");
         }
     }
 
     /* Advance to the DIB Data */
-    if (SDL_SeekIO(src, icoOfs, SDL_IO_SEEK_SET) < 0) {
+    if (SDL_RWseek(src, icoOfs, RW_SEEK_SET) < 0) {
+        SDL_Error(SDL_EFSEEK);
+        was_error = SDL_TRUE;
         goto done;
     }
 
     /* Read the Win32 BITMAPINFOHEADER */
-    if (!SDL_ReadU32LE(src, &biSize)) {
-        goto done;
-    }
+    biSize = SDL_ReadLE32(src);
     if (biSize == 40) {
-        if (!SDL_ReadS32LE(src, &biWidth) ||
-            !SDL_ReadS32LE(src, &biHeight) ||
-            !SDL_ReadU16LE(src, NULL /* biPlanes */) ||
-            !SDL_ReadU16LE(src, &biBitCount) ||
-            !SDL_ReadU32LE(src, &biCompression) ||
-            !SDL_ReadU32LE(src, NULL /* biSizeImage */) ||
-            !SDL_ReadU32LE(src, NULL /* biXPelsPerMeter */) ||
-            !SDL_ReadU32LE(src, NULL /* biYPelsPerMeter */) ||
-            !SDL_ReadU32LE(src, &biClrUsed) ||
-            !SDL_ReadU32LE(src, NULL /* biClrImportant */)) {
-            goto done;
-        }
+        biWidth = SDL_ReadLE32(src);
+        biHeight = SDL_ReadLE32(src);
+        /* biPlanes = */ SDL_ReadLE16(src);
+        biBitCount = SDL_ReadLE16(src);
+        biCompression = SDL_ReadLE32(src);
+        /* biSizeImage = */ SDL_ReadLE32(src);
+        /* biXPelsPerMeter = */ SDL_ReadLE32(src);
+        /* biYPelsPerMeter = */ SDL_ReadLE32(src);
+        biClrUsed = SDL_ReadLE32(src);
+        /* biClrImportant = */ SDL_ReadLE32(src);
     } else {
         IMG_SetError("Unsupported ICO bitmap format");
+        was_error = SDL_TRUE;
+        goto done;
+    }
+
+    /* Check for read error */
+    if (SDL_strcmp(SDL_GetError(), "") != 0) {
+        was_error = SDL_TRUE;
         goto done;
     }
 
@@ -267,11 +266,13 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
             break;
         default:
             IMG_SetError("ICO file with unsupported bit count");
+            was_error = SDL_TRUE;
             goto done;
         }
         break;
     default:
         IMG_SetError("Compressed ICO files not supported");
+        was_error = SDL_TRUE;
         goto done;
     }
 
@@ -279,14 +280,17 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
     if ((biWidth < 0) || (biWidth > 0xFFFFFF) ||
         (biHeight < 0) || (biHeight > 0xFFFFFF)) {
         IMG_SetError("Unsupported or invalid ICO dimensions");
+        was_error = SDL_TRUE;
         goto done;
     }
 
     /* Create a RGBA surface */
     biHeight = biHeight >> 1;
     //printf("%d x %d\n", biWidth, biHeight);
-    surface = SDL_CreateSurface(biWidth, biHeight, SDL_PIXELFORMAT_ARGB8888);
+    surface =
+        SDL_CreateRGBSurfaceWithFormat(0, biWidth, biHeight, 0, SDL_PIXELFORMAT_ARGB8888);
     if (surface == NULL) {
+        was_error = SDL_TRUE;
         goto done;
     }
 
@@ -298,12 +302,11 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
         }
         if (biClrUsed > SDL_arraysize(palette)) {
             IMG_SetError("Unsupported or incorrect biClrUsed field");
+            was_error = SDL_TRUE;
             goto done;
         }
         for (i = 0; i < (int) biClrUsed; ++i) {
-            if (SDL_ReadIO(src, &palette[i], 4) != 4) {
-                goto done;
-            }
+            SDL_RWread(src, &palette[i], 4, 1);
         }
     }
 
@@ -342,7 +345,9 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
                 int shift = (8 - ExpandBMP);
                 for (i = 0; i < surface->w; ++i) {
                     if (i % (8 / ExpandBMP) == 0) {
-                        if (SDL_ReadIO(src, &pixel, 1) != 1) {
+                        if (!SDL_RWread(src, &pixel, 1, 1)) {
+                            IMG_SetError("Error reading from ICO");
+                            was_error = SDL_TRUE;
                             goto done;
                         }
                     }
@@ -359,7 +364,9 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
                     pixel = 0;
                     for (j = 0; j < 3; ++j) {
                         /* Load each color channel into pixel */
-                        if (SDL_ReadIO(src, &channel, 1) != 1) {
+                        if (!SDL_RWread(src, &channel, 1, 1)) {
+                            IMG_SetError("Error reading from ICO");
+                            was_error = SDL_TRUE;
                             goto done;
                         }
                         pixel |= (channel << (j * 8));
@@ -370,7 +377,10 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
             break;
 
         default:
-            if (SDL_ReadIO(src, bits, surface->pitch) != (size_t)surface->pitch) {
+            if (SDL_RWread(src, bits, 1, surface->pitch)
+                != surface->pitch) {
+                SDL_Error(SDL_EFREAD);
+                was_error = SDL_TRUE;
                 goto done;
             }
             break;
@@ -379,9 +389,7 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
         if (pad) {
             Uint8 padbyte;
             for (i = 0; i < pad; ++i) {
-                if (SDL_ReadIO(src, &padbyte, 1) != 1) {
-                    goto done;
-                }
+                SDL_RWread(src, &padbyte, 1, 1);
             }
         }
     }
@@ -397,7 +405,9 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
         bits -= surface->pitch;
         for (i = 0; i < surface->w; ++i) {
             if (i % (8 / ExpandBMP) == 0) {
-                if (SDL_ReadIO(src, &pixel, 1) != 1) {
+                if (!SDL_RWread(src, &pixel, 1, 1)) {
+                    IMG_SetError("Error reading from ICO");
+                    was_error = SDL_TRUE;
                     goto done;
                 }
             }
@@ -408,85 +418,80 @@ LoadICOCUR_IO(SDL_IOStream * src, int type, SDL_bool closeio)
         if (pad) {
             Uint8 padbyte;
             for (i = 0; i < pad; ++i) {
-                if (SDL_ReadIO(src, &padbyte, 1) != 1) {
-                    goto done;
-                }
+                SDL_RWread(src, &padbyte, 1, 1);
             }
         }
     }
-
-    was_error = SDL_FALSE;
-
-done:
-    if (closeio && src) {
-        SDL_CloseIO(src);
-    }
+  done:
     if (was_error) {
-        if (src && !closeio) {
-            SDL_SeekIO(src, fp_offset, SDL_IO_SEEK_SET);
+        if (src) {
+            SDL_RWseek(src, fp_offset, RW_SEEK_SET);
         }
         if (surface) {
-            SDL_DestroySurface(surface);
+            SDL_FreeSurface(surface);
         }
         surface = NULL;
     }
-    return surface;
+    if (freesrc && src) {
+        SDL_RWclose(src);
+    }
+    return (surface);
 }
 
 /* Load a BMP type image from an SDL datasource */
-SDL_Surface *IMG_LoadBMP_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadBMP_RW(SDL_RWops *src)
 {
-    return(LoadBMP_IO(src, SDL_FALSE));
+    return(LoadBMP_RW(src, 0));
 }
 
 /* Load a ICO type image from an SDL datasource */
-SDL_Surface *IMG_LoadICO_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadICO_RW(SDL_RWops *src)
 {
-    return(LoadICOCUR_IO(src, 1, SDL_FALSE));
+    return(LoadICOCUR_RW(src, 1, 0));
 }
 
 /* Load a CUR type image from an SDL datasource */
-SDL_Surface *IMG_LoadCUR_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadCUR_RW(SDL_RWops *src)
 {
-    return(LoadICOCUR_IO(src, 2, SDL_FALSE));
+    return(LoadICOCUR_RW(src, 2, 0));
 }
 
 #else
 
-#if defined(_MSC_VER) && _MSC_VER >= 1300
+#if _MSC_VER >= 1300
 #pragma warning(disable : 4100) /* warning C4100: 'op' : unreferenced formal parameter */
 #endif
 
 /* See if an image is contained in a data source */
-int IMG_isBMP(SDL_IOStream *src)
+int IMG_isBMP(SDL_RWops *src)
 {
     return(0);
 }
 
-int IMG_isICO(SDL_IOStream *src)
+int IMG_isICO(SDL_RWops *src)
 {
     return(0);
 }
 
-int IMG_isCUR(SDL_IOStream *src)
+int IMG_isCUR(SDL_RWops *src)
 {
     return(0);
 }
 
 /* Load a BMP type image from an SDL datasource */
-SDL_Surface *IMG_LoadBMP_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadBMP_RW(SDL_RWops *src)
 {
     return(NULL);
 }
 
 /* Load a BMP type image from an SDL datasource */
-SDL_Surface *IMG_LoadCUR_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadCUR_RW(SDL_RWops *src)
 {
     return(NULL);
 }
 
 /* Load a BMP type image from an SDL datasource */
-SDL_Surface *IMG_LoadICO_IO(SDL_IOStream *src)
+SDL_Surface *IMG_LoadICO_RW(SDL_RWops *src)
 {
     return(NULL);
 }
