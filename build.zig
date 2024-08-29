@@ -10,16 +10,22 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
-    const sdl_dep = b.dependency("sdl", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    lib.linkLibrary(sdl_dep.artifact("SDL2"));
+    lib.linkLibC();
 
     lib.addIncludePath(b.path("include"));
+    lib.defineCMacro("USE_STBIMAGE", "1");
+    lib.defineCMacro("LOAD_BMP", "1");
+    lib.defineCMacro("LOAD_GIF", "1");
+    lib.defineCMacro("LOAD_JPG", "1");
+    lib.defineCMacro("LOAD_PNG", "1");
+    lib.defineCMacro("LOAD_SVG", "1");
+    lib.defineCMacro("LOAD_TGA", "1");
+    
+    const sdl_dep = b.dependency("SDL", .{});
+    const sdl_lib = sdl_dep.artifact("SDL2");
+    lib.linkLibrary(sdl_lib);
+
     lib.addCSourceFiles(.{ .files = &generic_src_files });
-    lib.linkLibC();
 
     switch (t.os.tag) {
         .windows => {
@@ -32,7 +38,6 @@ pub fn build(b: *std.Build) void {
 
         },
     }
-    lib.installHeadersDirectory(b.path("include"), "", .{});
     b.installArtifact(lib);
 }
 

@@ -3,10 +3,10 @@
     .minimum_zig_version = "0.13.0",
     .version = "2.8.2",
     .dependencies = .{
-        .sdl = .{
-            .url = "https://github.com/JustinBraben/SDL/archive/5cd2d5ec90ee6a0b8a82de01ac9e056f01d76448.tar.gz",
-            .hash = "1220a01ca8df4247edc901d95fef93c29f43047ec36f40315067c6318657380bfa51",
-        },
+        .@"SDL" = .{
+            .url = "https://github.com/pwbh/SDL/archive/refs/tags/release-2.30.3.tar.gz",
+            .hash = "12203d06a751586e5cf3f8b61f9a0012c70ada050ce33b6bf79d4741902f9c344239",
+        }
     },
     .paths = .{
         "LICENSE.txt",
