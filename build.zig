@@ -38,6 +38,7 @@ pub fn build(b: *std.Build) void {
 
         },
     }
+    lib.installHeadersDirectory(b.path("include"), "SDL2", .{});
     b.installArtifact(lib);
 }
 
