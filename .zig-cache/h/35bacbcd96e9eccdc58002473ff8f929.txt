@@ -1,0 +1,2 @@
+0
+7886 562949954658785 1738442084200318400 3d0aedc61176fd7cca69478c59d78375 0 C:\Users\Justin\source\repos\forks\SDL_image\src\IMG_WIC.c
